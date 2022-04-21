@@ -68,29 +68,21 @@ class Attention(nn.Module):
             nn.ReLU()
         )
 
-    def forward(self, ts, x, batch_size=None):
+    def forward(self, ts, x):
         x = packed_cat([ts, x])
-        x,seq_len = pad_packed_sequence(x)
-
-        if batch_size is None:
-            batch_size = x.size(1)
-
-        outs = []
-        for i in range((x.size(0)//batch_size)+1):
-            seq = x[:, i:i+batch_size, :]
-            
-            mask = torch.zeros((seq.size(1), seq.size(0)))
-            for j in range(seq.size(1)):
-                mask[j, seq_len[i+j]:] = 1
-
-            for l in range(self.layers):
-                q,k,v = self.kqvs[l](seq)
-                seq,_ = self.attns[l](q,k,v, key_padding_mask=mask)
-
-            sizes = seq_len[i:i+batch_size]
-            outs.append(seq.sum(dim=0).div(sizes.unsqueeze(-1)))
+        x,seq_len = pad_packed_sequence(x)    
         
-        return self.project(torch.cat(outs, dim=0))
+        mask = torch.zeros((x.size(1), x.size(0)))
+        for i in range(x.size(1)):
+            mask[i, seq_len[i]:] = 1
+
+        for l in range(self.layers):
+            q,k,v = self.kqvs[l](x)
+            x,_ = self.attns[l](q,k,v, key_padding_mask=mask)
+
+        # Avg
+        outs = x.sum(dim=0).div(seq_len.unsqueeze(-1))
+        return self.project(outs)
 
 
 class NodeEmbedder(nn.Module):
